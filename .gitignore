@@ -1,0 +1,12 @@
+# Ignore everything in the parent directory
+../*
+
+# Keep only specific project files in this folder
+!final_project.R
+!climate_data/
+!fire_data/
+
+# Ignore R workspace files
+.RData
+.Rhistory
+.Rproj.user/
