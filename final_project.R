@@ -199,14 +199,9 @@ train_index <- createDataPartition(fire_clean$log_acres, p = 0.8, list = FALSE)
 train <- fire_clean[train_index, ]
 test  <- fire_clean[-train_index, ]
 
-lm_model <- lm(log_acres ~ year + federal + avg_temp + arson + lightning +
-                 pdsi, data = train)
+lm_model <- lm(log_acres ~ year + federal + lightning + arson + avg_temp + avg_temp_lag3 +
+                 pdsi_lag1, data = train)
 
-lm_lag <- lm(log_acres ~ year + federal + lightning + arson +
-               avg_temp + avg_temp_lag3 + pdsi_lag1 + la_nina,
-             data = train)
-
-summary(lm_lag)
 
 summary(lm_model)
 
@@ -237,4 +232,63 @@ fire.step <- ols_step_forward_aic(lm_model)
 fire.step
 plot(fire.step)
 summary(fire.step$model)
+
+#Testing results for linear model
+
+test_pred <- predict(lm_model, newdata = test)
+mse_test <- mean((test$log_acres - test_pred)^2)
+mse_test
+
+
+#Random Forest
+library(randomForest)
+rf_vars <- c(
+  "log_acres",
+  "year",
+  "federal",
+  "lightning",
+  "arson",
+  "avg_temp",
+  "avg_temp_lag1",
+  "avg_temp_lag3",
+  "pdsi_lag1",
+  "el_nino",
+  "la_nina",
+  "avg_precip",
+  "avg_precip_lag1",
+  "avg_precip_lag3"
+)
+
+rf_data <- fire_clean %>%
+  select(all_of(rf_vars)) %>%
+  na.omit()
+
+set.seed(123)
+train_index <- createDataPartition(rf_data$log_acres, p = 0.8, list = FALSE)
+train_rf <- rf_data[train_index, ]
+test_rf  <- rf_data[-train_index, ]
+
+rf_model <- randomForest(
+  log_acres ~ .,
+  data = train_rf,
+  ntree = 500,
+  importance = TRUE
+)
+
+rf_pred <- predict(rf_model, newdata = test_rf)
+
+rf_mse <- mean((test_rf$log_acres - rf_pred)^2)
+
+rf_mse
+
+varImpPlot(rf_model)
+
+
+
+
+
+
+
+
+
 
