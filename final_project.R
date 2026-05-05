@@ -8,10 +8,25 @@ library(dplyr)
 library(lubridate)
 library(caret)
 library(olsrr)
+library(rsoi)
+
+oni_raw <- download_oni()
+head(oni_raw)
 
 fire <- read_csv("ENVST325 Final Project/fire_data/California_Historic_Fire_Perimeters_3836453159319713276.csv")
 
 ##Data Cleaning##
+oni_clean <- oni_raw %>%
+  mutate(
+    year  = as.integer(format(Date, "%Y")),
+    month = as.integer(format(Date, "%m"))
+  ) %>%
+  select(year, month, ONI, phase) %>%
+  mutate(
+    el_nino = ifelse(phase ==  "Warm Phase/El Nino", 1, 0),
+    la_nina = ifelse(phase == "Cool Phase/La Nina", 1, 0)
+  )
+
 dim(fire)
 
 colSums(is.na(fire))
@@ -43,6 +58,9 @@ fire_clean <- fire %>%
     acres > 0,            # drops zeros
     year >= 1950          # improves data completeness
   )
+
+fire_clean <- fire_clean %>%
+  filter(State == "CA")
   
 #Feature Engineering
 
@@ -70,12 +88,16 @@ fire_clean <- fire_clean %>%
                      1, 0),
     fire_season = ifelse(month %in% c(5,6,7,8,9,10),1,0)
   )
-  
+
+fire_clean <- fire_clean %>%
+  left_join(oni_clean, by = c("year", "month"))
+
+
 
 ###Other Dataset wrangling
-temp <- read_csv("ENVST325 Final Project/cali_temp_data.csv")
-precip <- read_csv("ENVST325 Final Project/cali_precip_data.csv")
-pdsi <- read_csv("ENVST325 Final Project/cali_PDSI.csv")
+temp <- read_csv("ENVST325 Final Project/climate_data/cali_temp_data.csv")
+precip <- read_csv("ENVST325 Final Project/climate_data/cali_precip_data.csv")
+pdsi <- read_csv("ENVST325 Final Project/climate_data/cali_PDSI.csv")
 
 # Function to clean NOAA climate files
 clean_noaa <- function(filepath, value_name) {
@@ -94,12 +116,39 @@ temp   <- clean_noaa("ENVST325 Final Project/climate_data/cali_temp_data.csv",  
 precip <- clean_noaa("ENVST325 Final Project/climate_data/cali_precip_data.csv", "avg_precip")
 pdsi   <- clean_noaa("ENVST325 Final Project/climate_data/cali_PDSI.csv",   "pdsi")
 
+
+# Create lagged climate variables in the NOAA data before joining
+temp_lag <- temp %>%
+  arrange(year, month) %>%
+  mutate(
+    avg_temp_lag1 = lag(avg_temp, 1),   # 1 month lag
+    avg_temp_lag3 = lag(avg_temp, 3)    # 3 month lag
+  )
+
+precip_lag <- precip %>%
+  arrange(year, month) %>%
+  mutate(
+    avg_precip_lag1 = lag(avg_precip, 1),
+    avg_precip_lag3 = lag(avg_precip, 3)
+  )
+
+pdsi_lag <- pdsi %>%
+  arrange(year, month) %>%
+  mutate(
+    pdsi_lag1 = lag(pdsi, 1),
+    pdsi_lag3 = lag(pdsi, 3),
+    pdsi_lag6 = lag(pdsi, 6)
+  )
+
 #Join different datasets into fire_clean
 fire_clean <- fire_clean %>%
-  select(-any_of(c("avg_temp", "avg_precip", "pdsi"))) %>%
-  left_join(temp,   by = c("year", "month")) %>%
-  left_join(precip, by = c("year", "month")) %>%
-  left_join(pdsi,   by = c("year", "month"))
+  select(-any_of(c("avg_temp", "avg_precip", "pdsi",
+                   "avg_temp_lag1", "avg_temp_lag3",
+                   "avg_precip_lag1", "avg_precip_lag3",
+                   "pdsi_lag1", "pdsi_lag3", "pdsi_lag6"))) %>%
+  left_join(temp_lag,   by = c("year", "month")) %>%
+  left_join(precip_lag, by = c("year", "month")) %>%
+  left_join(pdsi_lag,   by = c("year", "month"))
 
 #Check to make sure it is normal values
 #summary(fire_clean$avg_temp)
@@ -153,6 +202,12 @@ test  <- fire_clean[-train_index, ]
 lm_model <- lm(log_acres ~ year + federal + avg_temp + arson + lightning +
                  pdsi, data = train)
 
+lm_lag <- lm(log_acres ~ year + federal + lightning + arson +
+               avg_temp + avg_temp_lag3 + pdsi_lag1 + la_nina,
+             data = train)
+
+summary(lm_lag)
+
 summary(lm_model)
 
 
@@ -182,6 +237,4 @@ fire.step <- ols_step_forward_aic(lm_model)
 fire.step
 plot(fire.step)
 summary(fire.step$model)
-
-
 
