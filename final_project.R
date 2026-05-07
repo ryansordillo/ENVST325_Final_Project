@@ -27,16 +27,6 @@ oni_clean <- oni_raw %>%
     la_nina = ifelse(phase == "Cool Phase/La Nina", 1, 0)
   )
 
-dim(fire)
-
-colSums(is.na(fire))
-
-summary(fire$`GIS Calculated Acres`)
-summary(fire$Year)
-summary(fire$Cause)
-summary(fire$Agency)
-summary(fire$`Containment Date`)
-
 fire_clean <- fire %>%
   rename(
     acres        = `GIS Calculated Acres`,
@@ -92,7 +82,9 @@ fire_clean <- fire_clean %>%
 fire_clean <- fire_clean %>%
   left_join(oni_clean, by = c("year", "month"))
 
-
+#Remove fires with less than 1 acres burned so log values are positive
+sum(fire_clean$acres < 1)
+fire_clean <- fire_clean %>% filter(acres >= 1)
 
 ###Other Dataset wrangling
 temp <- read_csv("ENVST325 Final Project/climate_data/cali_temp_data.csv")
@@ -149,14 +141,6 @@ fire_clean <- fire_clean %>%
   left_join(temp_lag,   by = c("year", "month")) %>%
   left_join(precip_lag, by = c("year", "month")) %>%
   left_join(pdsi_lag,   by = c("year", "month"))
-
-#Check to make sure it is normal values
-#summary(fire_clean$avg_temp)
-#summary(fire_clean$avg_precip)
-#summary(fire_clean$pdsi)
-#sum(is.na(fire_clean$avg_temp))
-#sum(is.na(fire_clean$avg_precip))
-#sum(is.na(fire_clean$pdsi))
 
 #Data Visualization
 
@@ -218,7 +202,7 @@ qqline(res.fire)
 
 
 #Shapiro Wilks Normality Test
-shapiro.test(res.fire[5000:9999])
+shapiro.test(res.fire[1:4999])
 
 plot(fit.fire, res.fire, pch = 19, col = "grey50",
      xlab = "Fitted Values", ylab = "Standardized Residuals",
@@ -283,9 +267,118 @@ rf_mse
 
 varImpPlot(rf_model)
 
+# Get comparable metrics for both models
+lm_pred <- predict(lm_model, newdata = test_rf)
+lm_mse  <- mean((test_rf$log_acres - lm_pred)^2)
+lm_r2   <- cor(test_rf$log_acres, lm_pred)^2
+rf_r2   <- cor(test_rf$log_acres, rf_pred)^2
+
+cat("=== Model Comparison ===\n")
+cat("Linear Regression MSE:", round(lm_mse, 3), "\n")
+cat("Linear Regression R²: ", round(lm_r2, 3), "\n")
+cat("Random Forest MSE:    ", round(rf_mse, 3), "\n")
+cat("Random Forest R²:     ", round(rf_r2, 3), "\n")
 
 
 
+####Plots for Factsheet
+## Figure 1 - Feature Importance for random forest##
+importance_df <- as.data.frame(importance(rf_model)) %>%
+  rownames_to_column("variable") %>%
+  arrange(desc(`%IncMSE`)) %>%
+  mutate(variable = recode(variable,
+                           "federal"= "Federal Land",
+                           "year"= "Year",
+                           "lightning"= "Lightning Ignition",
+                           "avg_precip_lag3"= "Precipitation (3-mo lag)",
+                           "pdsi_lag1"= "Drought Index (1-mo lag)",
+                           "avg_temp_lag3"= "Temperature (3-mo lag)",
+                           "avg_precip" = "Precipitation",
+                           "avg_temp_lag1"= "Temperature (1-mo lag)",
+                           "avg_precip_lag1"= "Precipitation (1-mo lag)",
+                           "avg_temp" = "Temperature",
+                           "la_nina"= "La Nina",
+                           "el_nino"= "El Nino",
+                           "arson"          = "Arson Ignition"
+  ))
 
+ggplot(importance_df, aes(x = reorder(variable, `%IncMSE`), y = `%IncMSE`)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  labs(title = "Random Forest Feature Importance",
+       subtitle = "Variables ranked by % increase in MSE",
+       x = NULL,
+       y = "% Increase in MSE") +
+  theme_minimal(base_size = 13)
+
+
+## Figure 2 - Actual vs Predicted ##
+library(ggpmisc)
+pred_df <- data.frame(
+  actual    = test_rf$log_acres,
+  lm_pred   = lm_pred,
+  rf_pred   = rf_pred
+)
+
+library(ggpmisc)
+
+#Random Forest
+lm_fit_rf  <- lm(rf_pred ~ actual, data = pred_df)
+coefs_rf   <- round(coef(lm_fit_rf), 3)
+r2_rf      <- round(summary(lm_fit_rf)$r.squared, 3)
+eq_rf      <- paste0("y = ", coefs_rf[2], "x + ", coefs_rf[1], "  |  R² = ", r2_rf)
+
+plot_rf <- ggplot(pred_df, aes(x = actual, y = rf_pred)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "lm", color = "darkblue", linewidth = 0.8, se = FALSE) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  annotate("text", x = min(pred_df$actual) + 0.5,
+           y = max(pred_df$rf_pred) - 0.3,
+           label = eq_rf, hjust = 0, size = 4.5, color = "darkblue") +
+  labs(title = "Random Forest: Actual vs Predicted Log Acres",
+       subtitle = "Red dashed = perfect prediction  |  Blue = fitted trend",
+       x = "Actual Log Acres", y = "Predicted Log Acres") +
+  theme_minimal(base_size = 13)
+
+#linear Model
+lm_fit_lm  <- lm(lm_pred ~ actual, data = pred_df)
+coefs_lm   <- round(coef(lm_fit_lm), 3)
+r2_lm      <- round(summary(lm_fit_lm)$r.squared, 3)
+eq_lm      <- paste0("y = ", coefs_lm[2], "x + ", coefs_lm[1], "  |  R² = ", r2_lm)
+
+plot_lm <- ggplot(pred_df, aes(x = actual, y = lm_pred)) +
+  geom_point(alpha = 0.3, color = "tomato") +
+  geom_smooth(method = "lm", color = "darkgreen", linewidth = 0.8, se = FALSE) +
+  geom_abline(slope = 1, intercept = 0, color = "royalblue", linetype = "dashed") +
+  annotate("text", x = min(pred_df$actual) + 0.5,
+           y = max(pred_df$lm_pred) - 0.3,
+           label = eq_lm, hjust = 0, size = 4.5, color = "darkgreen") +
+  labs(title = "Linear Regression: Actual vs Predicted Log Acres",
+       subtitle = "Blue dashed = perfect prediction  |  Dark green = fitted trend",
+       x = "Actual Log Acres", y = "Predicted Log Acres") +
+  theme_minimal(base_size = 13)
+
+## Figure 3 - Time Series of Total Acres Burned ##
+fire_clean %>%
+  group_by(year) %>%
+  summarise(total_acres = sum(acres)) %>%
+  ggplot(aes(x = year, y = total_acres)) +
+  geom_line(color = "tomato") +
+  geom_smooth(method = "lm", se = TRUE, 
+              color = "black", linetype = "dashed") +
+  labs(title = "Total Acres Burned Per Year in California (1950-2025)",
+       x = "Year",
+       y = "Total Acres Burned") +
+  theme_minimal()
+
+## Figure 4 - Distribution raw vs log ##
+par(mfrow = c(1,2))
+hist(fire_clean$acres, breaks = 50, col = "orange",
+     main = "Raw Acres Burned",
+     xlab = "Acres")
+hist(fire_clean$log_acres, breaks = 50, col = "steelblue",
+     main = "Log Acres Burned",
+     xlab = "Log Acres")
+par(mfrow = c(1,1))
 
 
