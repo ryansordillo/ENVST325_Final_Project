@@ -12,7 +12,7 @@ library(olsrr)
 library(rsoi)
 library(randomForest)
 library(patchwork)
-
+options(scipen=999)
 # ── ENSO / ONI Data ───────────────────────────────────────────────────────────
 # Download Oceanic Nino Index directly from NOAA via rsoi package
 oni_raw <- download_oni()
@@ -351,7 +351,7 @@ plot_lm <- ggplot(pred_df, aes(x = actual, y = lm_pred)) +
   geom_smooth(method = "lm", color = "darkgreen", linewidth = 0.8, se = FALSE) +
   geom_abline(slope = 1, intercept = 0, color = "royalblue", linetype = "dashed") +
   annotate("text", x = min(pred_df$actual) + 0.5,
-           y = max(pred_df$lm_pred) - 0.3,
+           y = max(pred_df$lm_pred) + .5,
            label = eq_lm, hjust = 0, size = 4.5, color = "darkgreen") +
   labs(title    = "Linear Regression",
        subtitle = paste("R² =", round(lm_r2, 3), " | MSE =", round(lm_mse, 3)),
@@ -377,7 +377,7 @@ plot_lm + plot_rf +
 
 ## Figure 3 — Time Series: Total Acres Burned Per Year
 # Shows the long-term trend in California wildfire severity from 1950-2025
-fire_clean %>%
+timeseries_plot <- fire_clean %>%
   group_by(year) %>%
   summarise(total_acres = sum(acres)) %>%
   ggplot(aes(x = year, y = total_acres)) +
@@ -390,6 +390,7 @@ fire_clean %>%
        x = "Year",
        y = "Total Acres Burned") +
   theme_minimal(base_size = 13)
+ggsave("timeseries_fires.png", plot = timeseries_plot, width=5, height=3.5, dpi=300)
 
 ## Figure 4 — Distribution: Raw vs Log-Transformed Acres
 # Demonstrates justification for log transformation of response variable
@@ -404,5 +405,20 @@ hist(fire_clean$log_acres,
      xlab = "Log Acres")
 par(mfrow = c(1,1))
 
+#Sum Stats Table
+fire_clean %>%
+  select(acres, avg_temp, avg_precip, pdsi, lightning, arson, federal) %>%
+  summary()
 
-
+#Figure 5 - Timeseries Number of Fires per Year over Time
+fire_clean %>%
+  group_by(year) %>%
+  summarise(n_fires = n()) %>%
+  ggplot(aes(x = year, y = n_fires)) +
+  geom_line(color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE,
+              color = "black", linetype = "dashed") +
+  labs(title = "Number of Fires Per Year in California",
+       x = "Year", y = "Number of Fires") +
+  theme_minimal(base_size = 13)
+ggsave("ts_plot.png",width=5, height=3.5, dpi=300)
