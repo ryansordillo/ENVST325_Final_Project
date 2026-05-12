@@ -2,6 +2,27 @@
 #ENVST325 Final Project
 #4/28/2026
 
+# ── IMPORTANT: Directory Setup ────────────────────────────────────────────────
+# Before running this script, set your working directory to the folder 
+# containing the project data. All file paths are relative to this location.
+#
+# To set working directory in RStudio:
+# Session -> Set Working Directory -> Choose Directory
+# Or run: setwd("path/to/your/project/folder")
+#
+# Required data files and where to download them:
+# 1. fire_data/California_Historic_Fire_Perimeters_3836453159319713276.csv
+#    Source: https://data.ca.gov/dataset/california-fire-perimeters-all
+#
+# 2. climate_data/cali_temp_data.csv
+#    Source: https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/statewide/time-series
+#    Select: California | Average Temperature | Monthly | 1950-2024
+#
+# 3. climate_data/cali_precip_data.csv
+#    Source: same as above — select Precipitation instead of Temperature
+#
+# 4. climate_data/cali_PDSI.csv
+#    Source: same as above — select PDSI instead of Temperature
 # ── Libraries ────────────────────────────────────────────────────────────────
 library(tidyverse)
 library(ggplot2)
@@ -31,6 +52,7 @@ oni_clean <- oni_raw %>%
 # ── CAL FIRE Data ─────────────────────────────────────────────────────────────
 # Load California historic fire perimeters dataset from CAL FIRE FRAP
 # Source: https://data.ca.gov/dataset/california-fire-perimeters-all
+# Update file path below if your directory structure differs
 fire <- read_csv("ENVST325 Final Project/fire_data/California_Historic_Fire_Perimeters_3836453159319713276.csv")
 
 # ── Data Cleaning ─────────────────────────────────────────────────────────────
